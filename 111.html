@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Tanks CTF Local</title>
+<meta charset="utf-8" />
+<title>Tanks CTF Advanced</title>
 <style>
     body { margin: 0; overflow: hidden; background: #222; }
     canvas { display: block; margin: auto; background: #333; }
@@ -15,10 +15,31 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// Игрок
-let player = { x: 100, y: 100, w: 40, h: 40, team: "red" };
+/* -----------------------------
+            ИГРОК
+------------------------------*/
+let player = {
+    x: 120, y: 120,
+    w: 40, h: 40,
+    team: "red",
+    angle: 0,
+    speed: 2.5,
+    hp: 100,
+    maxHp: 100,
+    reload: 0
+};
 
-// Флаги и базы
+/* -----------------------------
+         БОТЫТАНКИ
+------------------------------*/
+let bots = [
+    { x: 700, y: 300, w:40,h:40, team:"blue", hp:100, angle:0, reload:0 },
+    { x: 750, y: 350, w:40,h:40, team:"blue", hp:100, angle:0, reload:0 }
+];
+
+/* -----------------------------
+       ФЛАГИ И БАЗЫ
+------------------------------*/
 let redFlag = { x: 100, y: 300, holder: null };
 let blueFlag = { x: 700, y: 300, holder: null };
 
@@ -31,54 +52,200 @@ let keys = {};
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
 
+/* -----------------------------
+             ПУЛИ
+------------------------------*/
+let bullets = [];
+
+function shoot(who) {
+    if (who.reload > 0) return;
+    who.reload = 25; // задержка выстрела
+
+    let vx = Math.cos(who.angle) * 6;
+    let vy = Math.sin(who.angle) * 6;
+
+    bullets.push({
+        x: who.x + who.w/2,
+        y: who.y + who.h/2,
+        vx, vy,
+        team: who.team
+    });
+}
+
+/* -----------------------------
+            УТИЛИТЫ
+------------------------------*/
 function collide(a, b, size = 40) {
     return Math.abs(a.x - b.x) < size && Math.abs(a.y - b.y) < size;
 }
 
-function update() {
-    const speed = 3;
+function keepInside(t) {
+    t.x = Math.max(0, Math.min(canvas.width - t.w, t.x));
+    t.y = Math.max(0, Math.min(canvas.height - t.h, t.y));
+}
+
+/* -----------------------------
+         ПОВЕДЕНИЕ БОТОВ
+------------------------------*/
+function updateBots() {
+    bots.forEach(bot => {
+        if (bot.hp <= 0) return;
+
+        // Простейший ИИ – поворот к игроку
+        let dx = player.x - bot.x;
+        let dy = player.y - bot.y;
+        bot.angle = Math.atan2(dy, dx);
+
+        // Двигается только если игрок в зоне
+        let dist = Math.hypot(dx, dy);
+        if (dist < 300)
+            bot.x += Math.cos(bot.angle) * 1.2,
+            bot.y += Math.sin(bot.angle) * 1.2;
+
+        keepInside(bot);
+
+        // Стрельба по игроку
+        if (dist < 500) shoot(bot);
+
+        if (bot.reload > 0) bot.reload--;
+    });
+}
+
+/* -----------------------------
+         ОБНОВЛЕНИЕ ЛОГИКИ
+------------------------------*/
+function updatePlayer() {
+    const speed = player.speed;
+
     if (keys["w"]) player.y -= speed;
     if (keys["s"]) player.y += speed;
     if (keys["a"]) player.x -= speed;
     if (keys["d"]) player.x += speed;
 
-    // Подбор флагов
-    if (!redFlag.holder && player.team === "blue" && collide(player, redFlag)) {
-        redFlag.holder = "me";
+    keepInside(player);
+
+    // Поворот мыши
+    player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+
+    // Стрельба мышью
+    if (mouse.down) shoot(player);
+    if (player.reload > 0) player.reload--;
+}
+
+/* -----------------------------
+         ВЛИЯНИЕ ПУЛЬ
+------------------------------*/
+function updateBullets() {
+    bullets.forEach((b, i) => {
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // удаляем, если вылетела
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            bullets.splice(i, 1);
+            return;
+        }
+
+        // попадание в игрока
+        if (b.team !== player.team && collide(b, player, 20)) {
+            player.hp -= 20;
+            bullets.splice(i, 1);
+            if (player.hp <= 0) respawn(player);
+            return;
+        }
+
+        // попадание в бота
+        bots.forEach((bot, j) => {
+            if (b.team !== bot.team && collide(b, bot, 20)) {
+                bot.hp -= 20;
+                bullets.splice(i, 1);
+                if (bot.hp <= 0) respawn(bot);
+            }
+        });
+    });
+}
+
+/* -----------------------------
+        РЕСПАВН
+------------------------------*/
+function respawn(t) {
+    if (t.team === "red") {
+        t.x = 120;
+        t.y = 120;
+    } else {
+        t.x = 720;
+        t.y = 350;
     }
+    t.hp = t.maxHp || 100;
+}
+
+/* -----------------------------
+        ВЗЯТИЕ И ДОСТАВКА ФЛАГОВ
+------------------------------*/
+function updateFlags() {
+    // Взятие флагов
     if (!blueFlag.holder && player.team === "red" && collide(player, blueFlag)) {
-        blueFlag.holder = "me";
+        blueFlag.holder = player;
     }
 
-    // Флаг следует за игроком
-    if (redFlag.holder === "me") {
-        redFlag.x = player.x;
-        redFlag.y = player.y;
+    if (!redFlag.holder && player.team === "blue" && collide(player, redFlag)) {
+        redFlag.holder = player;
     }
-    if (blueFlag.holder === "me") {
-        blueFlag.x = player.x;
-        blueFlag.y = player.y;
-    }
+
+    // Флаги следуют за владельцем
+    [redFlag, blueFlag].forEach(flag => {
+        if (flag.holder) {
+            flag.x = flag.holder.x;
+            flag.y = flag.holder.y;
+        }
+    });
 
     // Доставка флага на базу
-    if (redFlag.holder === "me" && player.team === "blue" && collide(player, blueBase, 60)) {
-        redFlag = { x: 100, y: 300, holder: null };
-        score.blue++;
-    }
-    if (blueFlag.holder === "me" && player.team === "red" && collide(player, redBase, 60)) {
-        blueFlag = { x: 700, y: 300, holder: null };
+    if (blueFlag.holder === player && collide(player, redBase, 60)) {
         score.red++;
+        blueFlag.holder = null;
+        blueFlag.x = 700;
+        blueFlag.y = 300;
     }
+    if (redFlag.holder === player && collide(player, blueBase, 60)) {
+        score.blue++;
+        redFlag.holder = null;
+        redFlag.x = 100;
+        redFlag.y = 300;
+    }
+}
+
+/* -----------------------------
+              РИСОВАНИЕ
+------------------------------*/
+function drawTank(t, color) {
+    ctx.save();
+    ctx.translate(t.x + t.w/2, t.y + t.h/2);
+    ctx.rotate(t.angle);
+
+    ctx.fillStyle = color;
+    ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, -5, 25, 10); // пушка
+
+    ctx.restore();
+
+    // HP bar
+    ctx.fillStyle = "red";
+    ctx.fillRect(t.x, t.y - 8, t.w, 5);
+    ctx.fillStyle = "lime";
+    ctx.fillRect(t.x, t.y - 8, (t.hp / 100) * t.w, 5);
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // базы
-    ctx.fillStyle = "rgba(255,0,0,0.3)";
+    ctx.fillStyle = "rgba(255,0,0,0.2)";
     ctx.fillRect(redBase.x, redBase.y, redBase.w, redBase.h);
 
-    ctx.fillStyle = "rgba(0,0,255,0.3)";
+    ctx.fillStyle = "rgba(0,0,255,0.2)";
     ctx.fillRect(blueBase.x, blueBase.y, blueBase.w, blueBase.h);
 
     // флаги
@@ -89,14 +256,43 @@ function draw() {
     ctx.fillRect(blueFlag.x, blueFlag.y, 20, 20);
 
     // игрок
-    ctx.fillStyle = "yellow";
-    ctx.fillRect(player.x, player.y, player.w, player.h);
+    drawTank(player, "yellow");
+
+    // боты
+    bots.forEach(bot => {
+        if (bot.hp > 0) drawTank(bot, bot.team === "blue" ? "cyan" : "pink");
+    });
+
+    // пули
+    ctx.fillStyle = "white";
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 4));
 
     // счёт
     ctx.fillStyle = "white";
     ctx.font = "20px Arial";
-    ctx.fillText("RED: " + score.red, 20, 20);
-    ctx.fillText("BLUE: " + score.blue, 780, 20);
+    ctx.fillText("RED: " + score.red, 30, 30);
+    ctx.fillText("BLUE: " + score.blue, 760, 30);
+}
+
+/* -----------------------------
+             МЫШЬ
+------------------------------*/
+let mouse = { x: 0, y: 0, down: false };
+canvas.addEventListener("mousemove", e => {
+    mouse.x = e.offsetX;
+    mouse.y = e.offsetY;
+});
+canvas.addEventListener("mousedown", () => mouse.down = true);
+canvas.addEventListener("mouseup", () => mouse.down = false);
+
+/* -----------------------------
+         ИГРОВОЙ ЦИКЛ
+------------------------------*/
+function update() {
+    updatePlayer();
+    updateBots();
+    updateBullets();
+    updateFlags();
 }
 
 function gameLoop() {
@@ -104,8 +300,8 @@ function gameLoop() {
     draw();
     requestAnimationFrame(gameLoop);
 }
-
 gameLoop();
+
 </script>
 </body>
 </html>
