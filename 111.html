@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tanks CTF Local</title>
+<style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    canvas { display: block; margin: auto; background: #333; }
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+// Игрок
+let player = { x: 100, y: 100, w: 40, h: 40, team: "red" };
+
+// Флаги и базы
+let redFlag = { x: 100, y: 300, holder: null };
+let blueFlag = { x: 700, y: 300, holder: null };
+
+let redBase = { x: 60, y: 280, w: 60, h: 60 };
+let blueBase = { x: 780, y: 280, w: 60, h: 60 };
+
+let score = { red: 0, blue: 0 };
+
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function collide(a, b, size = 40) {
+    return Math.abs(a.x - b.x) < size && Math.abs(a.y - b.y) < size;
+}
+
+function update() {
+    const speed = 3;
+    if (keys["w"]) player.y -= speed;
+    if (keys["s"]) player.y += speed;
+    if (keys["a"]) player.x -= speed;
+    if (keys["d"]) player.x += speed;
+
+    // Подбор флагов
+    if (!redFlag.holder && player.team === "blue" && collide(player, redFlag)) {
+        redFlag.holder = "me";
+    }
+    if (!blueFlag.holder && player.team === "red" && collide(player, blueFlag)) {
+        blueFlag.holder = "me";
+    }
+
+    // Флаг следует за игроком
+    if (redFlag.holder === "me") {
+        redFlag.x = player.x;
+        redFlag.y = player.y;
+    }
+    if (blueFlag.holder === "me") {
+        blueFlag.x = player.x;
+        blueFlag.y = player.y;
+    }
+
+    // Доставка флага на базу
+    if (redFlag.holder === "me" && player.team === "blue" && collide(player, blueBase, 60)) {
+        redFlag = { x: 100, y: 300, holder: null };
+        score.blue++;
+    }
+    if (blueFlag.holder === "me" && player.team === "red" && collide(player, redBase, 60)) {
+        blueFlag = { x: 700, y: 300, holder: null };
+        score.red++;
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // базы
+    ctx.fillStyle = "rgba(255,0,0,0.3)";
+    ctx.fillRect(redBase.x, redBase.y, redBase.w, redBase.h);
+
+    ctx.fillStyle = "rgba(0,0,255,0.3)";
+    ctx.fillRect(blueBase.x, blueBase.y, blueBase.w, blueBase.h);
+
+    // флаги
+    ctx.fillStyle = "red";
+    ctx.fillRect(redFlag.x, redFlag.y, 20, 20);
+
+    ctx.fillStyle = "blue";
+    ctx.fillRect(blueFlag.x, blueFlag.y, 20, 20);
+
+    // игрок
+    ctx.fillStyle = "yellow";
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+
+    // счёт
+    ctx.fillStyle = "white";
+    ctx.font = "20px Arial";
+    ctx.fillText("RED: " + score.red, 20, 20);
+    ctx.fillText("BLUE: " + score.blue, 780, 20);
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
